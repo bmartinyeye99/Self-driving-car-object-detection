@@ -1,0 +1,16 @@
+Numpy
+Scipy
+Scikit-learn
+Keras
+PyTorch
+Pandas
+Matplotlib
+zipfile
+shutil
+torchvision
+wandb
+os-sys
+kaggle
+jupyterlab
+notebook
+torch
