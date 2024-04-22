@@ -8,13 +8,80 @@ import cv2
 from sklearn.model_selection import train_test_split
 import imgaug as ia
 import imgaug.augmenters as iaa
+import torchvision.transforms as TF
 
-def create_dataset():
-    dir = ".scratch/data/labels_trainval.csv"
+
+
+
+class NumpyToTensor(Callable):
+    def __call__(self, x):
+        x = np.transpose(x, axes=(2, 0, 1))       # HWC -> CHW
+        x = torch.from_numpy(x) / 255.0         # <0;255>UINT8 -> <0;1>
+        return x.float()
+
+class SelfDrivingCarDataset(Dataset):
+    def __init__(self, annotations, image_transform=None):
+        self.annotations = annotations
+        self.image_transform = image_transform
+
+    def __len__(self):
+        return len(self.annotations)
+
+    def __len__(self):
+        return len(self.annotations)
+
+
+    # This method retrieves a sample from the dataset given its index idx.
+    # It loads the  image corresponding to the index, applies any specified
+    # transformations, and returns the image and its associated bounding boxes
+    def __getitem__(self, idx):
+        img_location = str(self.annotations.iloc[idx, 0])
+        print(img_location)
+
+        # Load image
+        image = self._load_image(img_location)
+        if (self.image_transform is not None):
+            image = self.image_transform(image)
+
+        x0 = self.annotations.iloc[idx, 2]
+        y0 = self.annotations.iloc[idx, 3]
+        x1 = self.annotations.iloc[idx, 4]
+        y1 = self.annotations.iloc[idx, 5]
+
+        x0_2 = -5
+        y0_2 = -5
+        x1_2 = -5
+        y1_2 = -5
+
+        cell_value = self.annotations.iloc[idx, 8]
+        if pd.notnull(cell_value):
+            x0_2 = self.annotations.iloc[idx, 8]
+            y0_2 = self.annotations.iloc[idx, 9]
+            x1_2 = self.annotations.iloc[idx, 10]
+            y1_2 = self.annotations.iloc[idx, 11]
+
+        bbox = torch.tensor([x0, y0, x1, y1], dtype=torch.float32)
+        bbox2 = torch.tensor([x0_2, y0_2, x1_2, y1_2], dtype=torch.float32)
+
+        bbox = self._adjust_bbox(bbox, 480, 300)
+        if pd.notnull(cell_value):
+            bbox2 = self._adjust_bbox(bbox2, 480, 300)
+
+        return image, bbox, bbox2
+
+    def _load_image(self, file_path):
+        image = cv2.imread(file_path,
+                           cv2.IMREAD_COLOR)      # <H;W;C>
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return image
+
+
+def create_dataset(input_transform):
+    annotation_dir = ".scratch/data/labels_trainval.csv"
     root_dir = ".scratch/data/"
     print("Creating dataset...")
 
-    data = pd.read_csv(dir)
+    data = pd.read_csv(annotation_dir)
 
     # Count the occurrences of each value
     value_counts = data['frame'].value_counts()
@@ -24,10 +91,10 @@ def create_dataset():
     result_df = data[data['frame'].isin(value_counts[value_counts == 1].index)]
     print("Dataset created")
 
-    # Combine root_dir col to df
-    result_df['filepath'] = root_dir + "images/" + result_df['frame']
+    # Combine root_dir col to df - place filepath to 0th index so __getitem__ found the dir of the image
+    result_df.insert(0, 'filepath', root_dir + "images/" + result_df['frame'])
 
-    new_columns = ['label2', 'x1_2', 'y1_2', 'x2_2', 'y2_2']
+    new_columns = [ 'x1_2', 'y1_2', 'x2_2', 'y2_2', 'class_id_2']
 
     # Adding new columns
     for column in new_columns:
@@ -40,161 +107,25 @@ def create_dataset():
     df_train, df_val = train_test_split(
         train_val, test_size=0.2, random_state=42)
 
-    df_train = augment_data(df_train)
+    df_draw = pd.concat([df_test[:5], df_test[-5:]])
 
+    print('Training dataset shape: ', df_train.shape)
+    print('Validation dataset shape: ', df_val.shape)
+    print('Testing dataset shape: ', df_test.shape)
 
-def blend_images(image_path1, image_path2, alpha=0.7):
-    image1 = cv2.imread(image_path1)
-    image2 = cv2.imread(image_path2)
+    dataset_train = SelfDrivingCarDataset(df_train,input_transform)
+    dataset_val = SelfDrivingCarDataset(df_val,input_transform)
+    dataset_test = SelfDrivingCarDataset(df_test,input_transform)
+    dataset_draw = SelfDrivingCarDataset(df_draw,input_transform)
 
-    # Blend the images
-    blended = cv2.addWeighted(image1, alpha, image2, 1 - alpha, 0)
-    return blended
+    print("Dataset splitted (70%, 20%, 10%)!")
+    print(result_df.columns)
 
+    return dataset_train, dataset_val, dataset_test, dataset_draw
 
-def augment_data(df):
-    print('Augmenting data....')
-    root = '.scratch/data/augmentations'
+input_transform = TF.Compose([
+            NumpyToTensor()
+        ])
+create_dataset(input_transform)
 
-    if not os.path.exists(root):
-        os.makedirs(root)
-
-    root = root + '/'
-
-    augmented_df = []
-
-    df2 = df.sample(frac=1, random_state=42).reset_index(drop=True)
-
-    for row, row2 in zip(df.itertuples(index=True, name='Pandas'), df2.itertuples(index=True, name='Pandas')):
-        # Load the image
-        file_name = row.frame
-        filepath = row.filepath
-     #   print(filepath)
-        file_name2 = row2.frame
-        filepath2 = row2.filepath
-
-        # Check if filepath is None
-        if filepath is None:
-            print(f"Error: Filepath is None for {file_name}")
-            continue
-
-        # Read the image
-        image = cv2.imread(filepath)
-
-        # Check if image is None
-        if image is None:
-            print(f"Error: Failed to read image for {file_name}")
-            continue
-
-
-        x1, y1, x2, y2 = row.xmin, row.ymin, row.xmax, row.ymax
-        x1_2, y1_2, x2_2, y2_2 = row2.xmin, row2.ymin, row2.xmax, row2.ymax
-
-        # Define the bounding box
-        bbs = ia.BoundingBoxesOnImage([
-            ia.BoundingBox(x1=x1, y1=y1, x2=x2, y2=y2)
-        ], shape=image.shape)
-
-
-        # Augmenters
-        flip_augmenter = iaa.Fliplr(1.0)  # flip
-        rotate_augmenter = iaa.Affine(rotate=10)  # Rotate by 10 degrees
-
-        flipped = root + 'flipped_' + file_name
-
-        # Apply flip
-        image_flipped, bbs_flipped = flip_augmenter(
-            image=image, bounding_boxes=bbs)
-
-        if not os.path.exists(flipped):
-            cv2.imwrite(flipped, image_flipped)
-
-        rotated = root + 'rotated_' + file_name
-
-        # Apply rotation
-        image_rotated, bbs_rotated = rotate_augmenter(
-            image=image, bounding_boxes=bbs)
-
-        if not os.path.exists(rotated):
-            cv2.imwrite(rotated, image_rotated)
-
-        rotated_flipped = root + 'rotated_flipped_' + file_name
-
-        # Apply rotation and then flip
-        image_rotated_flipped, bbs_rotated_flipped = flip_augmenter(
-            image=image_rotated, bounding_boxes=bbs_rotated)
-
-        if not os.path.exists(rotated_flipped):
-            cv2.imwrite(rotated_flipped, image_rotated_flipped)
-
-        blend_image = root + 'blended_' + \
-            file_name.replace(".jpg", "") + '_' + file_name2
-
-        if not os.path.exists(blend_image):
-            cv2.imwrite(blend_image, blend_images(filepath, filepath2))
-
-        bbs_flipped = bbs_flipped.bounding_boxes[0]
-        bbs_rotated = bbs_rotated.bounding_boxes[0]
-        bbs_rotated_flipped = bbs_rotated_flipped.bounding_boxes[0]
-
-        # blended image
-        bl_image = {
-            'filepath': blend_image,
-            'label': row.class_id,
-            'x1': x1,
-            'y1': y1,
-            'x2': x2,
-            'y2': y2,
-            'file': row.frame,
-            'label2': row2.class_id,
-            'x1_2': x1_2,
-            'y1_2': y1_2,
-            'x2_2': x2_2,
-            'y2_2': y2_2,
-        }
-
-        # flipped image
-        fl_row = {
-            'filepath': flipped,
-            'label': row.class_id,
-            'x1': bbs_flipped.x1,
-            'y1': bbs_flipped.y1,
-            'x2': bbs_flipped.x2,
-            'y2': bbs_flipped.y2,
-            'file': row.frame
-        }
-
-        rt_row = {
-            'filepath': rotated,
-            'label': row.class_id,
-            'x1': bbs_rotated.x1,
-            'y1': bbs_rotated.y1,
-            'x2': bbs_rotated.x2,
-            'y2': bbs_rotated.y2,
-            'file': row.frame
-        }
-
-        fl_rt_row = {
-            'filepath': rotated_flipped,
-            'label': row.class_id,
-            'x1': bbs_rotated_flipped.x1,
-            'y1': bbs_rotated_flipped.y1,
-            'x2': bbs_rotated_flipped.x2,
-            'y2': bbs_rotated_flipped.y2,
-            'file': row.frame
-        }
-
-        augmented_df.append(bl_image)
-        augmented_df.append(fl_row)
-        augmented_df.append(rt_row)
-        augmented_df.append(fl_rt_row)
-
-    aug_df = pd.DataFrame(augmented_df)
-
-    df = pd.concat([df, aug_df], ignore_index=True)
-    print('Augmentation finished!')
-
-    print('Augmented shape: ', aug_df.shape)
-    #print(df)
-    return df
 
