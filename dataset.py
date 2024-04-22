@@ -48,20 +48,7 @@ class SelfDrivingCarDataset(Dataset):
         x1 = self.annotations.iloc[idx, 4]
         y1 = self.annotations.iloc[idx, 5]
 
-        x0_2 = -5
-        y0_2 = -5
-        x1_2 = -5
-        y1_2 = -5
-
-        cell_value = self.annotations.iloc[idx, 8]
-        if pd.notnull(cell_value):
-            x0_2 = self.annotations.iloc[idx, 8]
-            y0_2 = self.annotations.iloc[idx, 9]
-            x1_2 = self.annotations.iloc[idx, 10]
-            y1_2 = self.annotations.iloc[idx, 11]
-
         bbox = torch.tensor([x0, y0, x1, y1], dtype=torch.float32)
-        bbox2 = torch.tensor([x0_2, y0_2, x1_2, y1_2], dtype=torch.float32)
 
         bbox = self._adjust_bbox(bbox, 480, 300)
         if pd.notnull(cell_value):
