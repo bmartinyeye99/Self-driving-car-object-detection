@@ -22,7 +22,7 @@ kaggle_command = f"kaggle datasets download -d {
     dataset_name} -p {scratch_directory}/"
 
 
-image_original_width, image_original_height = 400, 300
+image_original_width, image_original_height = 480, 300
 
 
 class NumpyToTensor(Callable):
