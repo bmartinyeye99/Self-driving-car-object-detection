@@ -64,8 +64,8 @@ class Trainer:
         self.draw(self.model, self.datamodule.dataloader_draw)
 
     def train_epoch(self, model, dataloader, run, epoch):
-        model.train()                   # Set model to train mode
-        stats = Statistics(self.device) # Statistic class
+        model.train()                    # Set model to train mode
+        stats = Statistics(self.device)  # Statistic class
         description = "Training"
 
         with tqdm(dataloader, desc=description) as progress:
@@ -121,13 +121,11 @@ class Trainer:
 
                     progress.set_postfix(avg_loss=stats.get_average_loss())
 
-        
         for metric_name, metric_value in stats.get_metrics():
             print(f"{description} {metric_name}: {metric_value}")
 
             if run is not None:
                 run.log({f"{description} {metric_name}": metric_value}, step=epoch)
-
 
     def test(self, model, dataloader):
         model.eval()
@@ -149,10 +147,8 @@ class Trainer:
 
                 progress.set_postfix(avg_loss=stats.get_average_loss())
 
-        
         for metric_name, metric_value in stats.get_metrics():
             print(f"{description} {metric_name}: {metric_value}")
-
 
     def draw(self, model, dataloader):
         print('Showing predictions on images!')

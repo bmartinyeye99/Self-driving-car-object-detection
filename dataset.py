@@ -99,7 +99,8 @@ class CustomDataset(Dataset):
 
         class_ids = self.annotations.iloc[idx, 5]
 
-        boxes = [[class_id, xmn, xmx, ymn, ymx] for class_id, xmn, xmx, ymn, ymx in zip(class_ids, xmin, xmax, ymin, ymax)]
+        boxes = [[class_id, xmn, xmx, ymn, ymx] for class_id, xmn,
+                 xmx, ymn, ymx in zip(class_ids, xmin, xmax, ymin, ymax)]
         boxes = torch.tensor(boxes)
 
         image = self._load_image(img_location)
