@@ -93,9 +93,9 @@ class CustomDataset(Dataset):
 
         # Normalized xmin xmax ymin	ymax
         xmin = [x / image_original_width for x in self.annotations.iloc[idx, 1]]
-        xmax = [x / image_original_width for x in self.annotations.iloc[idx, 2]]
+        xmax = [x / image_original_width + 1e-10 for x in self.annotations.iloc[idx, 2]]
         ymin = [x / image_original_height for x in self.annotations.iloc[idx, 3]]
-        ymax = [x / image_original_height for x in self.annotations.iloc[idx, 4]]
+        ymax = [x / image_original_height + 1e-10 for x in self.annotations.iloc[idx, 4]]
 
         class_ids = self.annotations.iloc[idx, 5]
 
