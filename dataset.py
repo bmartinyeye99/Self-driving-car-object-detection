@@ -54,7 +54,7 @@ def load_dataset():
 def create_dataset(image_transform=None, augmentation_transform=None):
     print("Creating dataset...")
 
-    df = load_dataset()
+    df = load_dataset().groupby('frame').agg(list).reset_index()
 
     # Splitting the dataset into 90% for training + validation (70% + 20%) and 10% for testing
     train_val, df_test = train_test_split(df, test_size=0.1, random_state=42)
@@ -91,19 +91,23 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_location = str(self.annotations.iloc[idx, 0])
 
-        # xmin	xmax	ymin	ymax
-        x0 = self.annotations.iloc[idx, 2]
-        x1 = self.annotations.iloc[idx, 3]
-        y0 = self.annotations.iloc[idx, 4]
-        y1 = self.annotations.iloc[idx, 5]
+        # Normalized xmin xmax ymin	ymax
+        xmin = [x / image_original_width for x in self.annotations.iloc[idx, 1]]
+        xmax = [x / image_original_width for x in self.annotations.iloc[idx, 2]]
+        ymin = [x / image_original_height for x in self.annotations.iloc[idx, 3]]
+        ymax = [x / image_original_height for x in self.annotations.iloc[idx, 4]]
+
+        class_ids = self.annotations.iloc[idx, 5]
+
+        boxes = [[class_id, xmn, xmx, ymn, ymx] for class_id, xmn, xmx, ymn, ymx in zip(class_ids, xmin, xmax, ymin, ymax)]
+        boxes = torch.tensor(boxes)
 
         image = self._load_image(img_location)
-        bbox = self._normalize_bbox([x0, y0, x1, y1])
 
         if (self.augmentation_transform is not None):
-            image = self.augmentation_transform(image, bbox)
+            image, boxes = self.augmentation_transform(image, boxes)
 
-        return image, bbox
+        return image, boxes
 
     def _load_image(self, file_name):
         file_path = f"{images_path}/{file_name}"
@@ -115,11 +119,3 @@ class CustomDataset(Dataset):
             image = self.image_transform(image)
 
         return image
-
-    def _normalize_bbox(self, bbox):
-        x0 = bbox[0] / image_original_width
-        y0 = bbox[1] / image_original_height
-        x1 = bbox[2] / image_original_width
-        y1 = bbox[3] / image_original_height
-
-        return torch.tensor([x0, y0, x1, y1], dtype=torch.float32)
