@@ -2,6 +2,35 @@ import torch
 from torchmetrics import R2Score
 from torchvision.ops import box_iou
 
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+
+def plot_image(image_tensor, boxes_tensor):
+  image_np = image_tensor.permute(1, 2, 0).numpy()
+
+  img_height, img_width = image_tensor.shape[1], image_tensor.shape[2]
+
+  _fig, ax = plt.subplots(1)
+  ax.imshow(image_np)
+
+  for box in boxes_tensor:
+    x_min = box[-4] * img_width
+    x_max = box[-3] * img_width
+    y_min = box[-2] * img_height
+    y_max = box[-1] * img_height
+
+    width = x_max - x_min
+    height = y_max - y_min
+
+    # Create a Rectangle patch
+    rect = patches.Rectangle((x_min, y_min), width, height, linewidth=1, edgecolor='r', facecolor='none')
+
+    # Add the rectangle to the plot
+    ax.add_patch(rect)
+
+  plt.show()
+
 
 class Statistics:
   def __init__(self, device):
