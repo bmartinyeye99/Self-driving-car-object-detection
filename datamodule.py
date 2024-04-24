@@ -1,6 +1,7 @@
 import torch
 import torchvision.transforms as TF
 from dataset import NumpyToTensor, create_dataset
+import albumentations as A
 
 
 class DataModule:
@@ -10,8 +11,15 @@ class DataModule:
             NumpyToTensor(),
         ])
 
+        self.augmentation_transform = A.Compose([
+            A.HorizontalFlip(p=0.5),
+            A.Blur(p=0.1),
+            A.RandomBrightnessContrast(p=0.2),
+            A.ChannelShuffle(p=0.1),
+        ], bbox_params=A.BboxParams(format='albumentations', min_visibility=0.4))
+
         self.dataset_train, self.dataset_val, self.dataset_test, self.dataset_draw = create_dataset(
-            self.input_transform)
+            self.input_transform, self.augmentation_transform)
 
     def setup(self, cfg):
         self.dataloader_train = torch.utils.data.dataloader.DataLoader(

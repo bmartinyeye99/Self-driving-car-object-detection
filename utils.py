@@ -15,9 +15,10 @@ def plot_image(image_tensor, boxes_tensor):
     ax.imshow(image_np)
 
     for box in boxes_tensor:
+        # Format class_id, x_min, y_min, x_max, y_max
         x_min = box[-4] * img_width
-        x_max = box[-3] * img_width
-        y_min = box[-2] * img_height
+        y_min = box[-3] * img_height
+        x_max = box[-2] * img_width
         y_max = box[-1] * img_height
 
         width = x_max - x_min

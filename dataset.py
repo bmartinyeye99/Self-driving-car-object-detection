@@ -99,14 +99,25 @@ class CustomDataset(Dataset):
 
         class_ids = self.annotations.iloc[idx, 5]
 
-        boxes = [[class_id, xmn, xmx, ymn, ymx] for class_id, xmn,
-                 xmx, ymn, ymx in zip(class_ids, xmin, xmax, ymin, ymax)]
-        boxes = torch.tensor(boxes)
+        # Format x_min, y_min, x_max, y_max, class_id
+        boxes = [[x_min, y_min, x_max, y_max, class_ids] for class_ids, x_min,
+                 x_max, y_min, y_max in zip(class_ids, xmin, xmax, ymin, ymax)]
 
         image = self._load_image(img_location)
 
         if (self.augmentation_transform is not None):
-            image, boxes = self.augmentation_transform(image, boxes)
+            transformed = self.augmentation_transform(
+                image=image, bboxes=boxes)
+            image = transformed['image']
+            boxes = transformed['bboxes']
+
+        if (self.image_transform is not None):
+            image = self.image_transform(image)
+
+        # Final format class_id, x_min, y_min, x_max, y_max
+        boxes = [[box[4], box[0], box[1], box[2], box[3]] for box in boxes]
+
+        boxes = torch.tensor(boxes)
 
         return image, boxes
 
@@ -115,8 +126,5 @@ class CustomDataset(Dataset):
 
         image = cv2.imread(file_path, cv2.IMREAD_COLOR)      # <H;W;C>
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        if (self.image_transform is not None):
-            image = self.image_transform(image)
 
         return image
