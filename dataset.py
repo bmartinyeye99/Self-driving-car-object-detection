@@ -51,10 +51,12 @@ def load_dataset():
     return pd.read_csv(annotation_location)
 
 
-def create_dataset(image_transform=None, augmentation_transform=None):
+def create_dataset(stride, num_classes, image_transform=None, augmentation_transform=None):
     print("Creating dataset...")
 
-    df = load_dataset().groupby('frame').agg(list).reset_index()
+    df = load_dataset()
+
+    df = df.groupby('frame').agg(list).reset_index()
 
     # Splitting the dataset into 90% for training + validation (70% + 20%) and 10% for testing
     train_val, df_test = train_test_split(df, test_size=0.1, random_state=42)
@@ -69,10 +71,10 @@ def create_dataset(image_transform=None, augmentation_transform=None):
     print('Testing dataset shape: ', df_test.shape)
 
     dataset_train = CustomDataset(
-        df_train, image_transform, augmentation_transform)
-    dataset_val = CustomDataset(df_val, image_transform)
-    dataset_test = CustomDataset(df_test, image_transform)
-    dataset_draw = CustomDataset(df_draw, image_transform)
+        df_train, stride, num_classes, image_transform, augmentation_transform)
+    dataset_val = CustomDataset(df_val, stride, num_classes, image_transform)
+    dataset_test = CustomDataset(df_test, stride, num_classes, image_transform)
+    dataset_draw = CustomDataset(df_draw, stride, num_classes, image_transform)
 
     print("Dataset splitted (70%, 20%, 10%)!")
 
@@ -80,10 +82,13 @@ def create_dataset(image_transform=None, augmentation_transform=None):
 
 
 class CustomDataset(Dataset):
-    def __init__(self, annotations, image_transform=None, augmentation_transform=None):
+    def __init__(self, annotations, stride, num_classes, image_transform=None, augmentation_transform=None, S=10):
         self.annotations = annotations
         self.image_transform = image_transform
         self.augmentation_transform = augmentation_transform
+
+        self.S = stride
+        self.C = num_classes
 
     def __len__(self):
         return len(self.annotations)
@@ -91,17 +96,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         img_location = str(self.annotations.iloc[idx, 0])
 
-        # Normalized xmin xmax ymin	ymax
-        xmin = [x / image_original_width for x in self.annotations.iloc[idx, 1]]
-        xmax = [x / image_original_width + 1e-10 for x in self.annotations.iloc[idx, 2]]
-        ymin = [x / image_original_height for x in self.annotations.iloc[idx, 3]]
-        ymax = [x / image_original_height + 1e-10 for x in self.annotations.iloc[idx, 4]]
-
-        class_ids = self.annotations.iloc[idx, 5]
-
-        # Format x_min, y_min, x_max, y_max, class_id
-        boxes = [[x_min, y_min, x_max, y_max, class_ids] for class_ids, x_min,
-                 x_max, y_min, y_max in zip(class_ids, xmin, xmax, ymin, ymax)]
+        boxes = self.__setup_boxes(idx)
 
         image = self._load_image(img_location)
 
@@ -114,12 +109,38 @@ class CustomDataset(Dataset):
         if (self.image_transform is not None):
             image = self.image_transform(image)
 
-        # Final format class_id, x_min, y_min, x_max, y_max
-        boxes = [[box[4], box[0], box[1], box[2], box[3]] for box in boxes]
+        label_matrix = torch.zeros(
+            (self.S, self.S, self.C + len(boxes[0])), dtype=torch.float)
+        for box in boxes:
+            x, y, width, height, class_id = box
 
-        boxes = torch.tensor(boxes)
+            i, j = int(self.S * y), int(self.S * x)
 
-        return image, boxes
+            cell = label_matrix[i, j]
+
+            # One object per cell
+            if cell[self.C] == 0:
+                cell[self.C] = 1.0
+
+                cell[self.C + 1:] = torch.tensor(
+                    [
+                        self.S * x - j,
+                        self.S * y - i,
+                        width * self.S,
+                        height * self.S
+                    ]
+                )
+
+                if class_id > self.C or class_id == 0:
+                    error_message = f"There are more classes then predefined! \
+                                    Expected numbers from 1 to \
+                                    {self.C}, instead got {class_id}!"
+                    raise Exception(error_message)
+
+                # Classes id start from 1 thats why we subtract 1 to start from 0
+                cell[class_id - 1] = 1.0
+
+        return image, label_matrix
 
     def _load_image(self, file_name):
         file_path = f"{images_path}/{file_name}"
@@ -128,3 +149,27 @@ class CustomDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         return image
+
+    def __setup_boxes(self, idx):
+
+        x = [
+            ((xmin + xmax) / 2 / image_original_width) + 1e-10
+            for xmin, xmax in zip(self.annotations.iloc[idx, 1], self.annotations.iloc[idx, 2])
+        ]
+
+        y = [
+            ((ymin + ymax) / 2 / image_original_height) + 1e-10
+            for ymin, ymax in zip(self.annotations.iloc[idx, 3], self.annotations.iloc[idx, 4])
+        ]
+        width = [
+            ((xmax - xmin) / image_original_width) + 1e-10
+            for xmin, xmax in zip(self.annotations.iloc[idx, 1], self.annotations.iloc[idx, 2])
+        ]
+        height = [
+            ((ymax - ymin) / image_original_height) + 1e-10
+            for ymin, ymax in zip(self.annotations.iloc[idx, 3], self.annotations.iloc[idx, 4])
+        ]
+
+        class_ids = self.annotations.iloc[idx, 5]
+
+        return list(zip(x, y, width, height, class_ids))

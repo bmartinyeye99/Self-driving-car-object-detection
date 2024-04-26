@@ -11,7 +11,7 @@ class Experiment:
         self.cfg = cfg
 
         # Create model & datamodule
-        self.datamodule = DataModule()
+        self.datamodule = DataModule(cfg.stride, cfg.classes)
         self.model = self._create_model(cfg)
 
         # Create trainer
@@ -19,7 +19,8 @@ class Experiment:
 
     def _create_model(self, cfg):
         model = Model(chin=cfg.chin, channels=cfg.channels,
-                      num_hidden=cfg.num_hidden, dropout_rate=cfg.dropout_rate, negative_slope=cfg.negative_slope)
+                      num_hidden=cfg.num_hidden, S=cfg.stride, C=cfg.classes,
+                      dropout_rate=cfg.dropout_rate, negative_slope=cfg.negative_slope)
 
         device = torch.device(cfg.device)
         model = model.to(device, memory_format=torch.channels_last)
