@@ -35,10 +35,12 @@ class Trainer:
             print('Epoch ', epoch)
 
             current_lr = self.optimizer.param_groups[0]['lr']
-            print(f"Learning Rate: {current_lr}")
+            print(f"Learning Rate: {current_lr}\n")
 
             self.train_epoch(self.model,
                              self.datamodule.dataloader_train, run, epoch)
+
+            print("\n")
 
             self.validate_epoch(self.model,
                                 self.datamodule.dataloader_valid, run, epoch)
@@ -141,7 +143,7 @@ class Trainer:
                     with autocast():
                         model_prediction = model(x)
 
-                        loss = self.localization_loss_fn(model_prediction, y)
+                        loss = self.loss_fn(model_prediction, y)
 
                     stats.step(y, model_prediction, loss)
 
