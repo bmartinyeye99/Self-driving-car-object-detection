@@ -51,7 +51,7 @@ def load_dataset():
     return pd.read_csv(annotation_location)
 
 
-def create_dataset(stride, num_classes, image_transform=None, augmentation_transform=None):
+def create_dataset(cfg, image_transform=None, augmentation_transform=None):
     print("Creating dataset...")
 
     df = load_dataset()
@@ -71,10 +71,13 @@ def create_dataset(stride, num_classes, image_transform=None, augmentation_trans
     print('Testing dataset shape: ', df_test.shape)
 
     dataset_train = CustomDataset(
-        df_train, stride, num_classes, image_transform, augmentation_transform)
-    dataset_val = CustomDataset(df_val, stride, num_classes, image_transform)
-    dataset_test = CustomDataset(df_test, stride, num_classes, image_transform)
-    dataset_draw = CustomDataset(df_draw, stride, num_classes, image_transform)
+        df_train, cfg, image_transform, augmentation_transform)
+    dataset_val = CustomDataset(
+        df_val, cfg, image_transform)
+    dataset_test = CustomDataset(
+        df_test, cfg, image_transform)
+    dataset_draw = CustomDataset(
+        df_draw, cfg, image_transform)
 
     print("Dataset splitted (70%, 20%, 10%)!")
 
@@ -82,13 +85,13 @@ def create_dataset(stride, num_classes, image_transform=None, augmentation_trans
 
 
 class CustomDataset(Dataset):
-    def __init__(self, annotations, stride, num_classes, image_transform=None, augmentation_transform=None, S=10):
+    def __init__(self, annotations, cfg, image_transform=None, augmentation_transform=None):
         self.annotations = annotations
         self.image_transform = image_transform
         self.augmentation_transform = augmentation_transform
 
-        self.S = stride
-        self.C = num_classes
+        self.S = cfg.S
+        self.C = cfg.C
 
     def __len__(self):
         return len(self.annotations)
@@ -109,8 +112,8 @@ class CustomDataset(Dataset):
         if (self.image_transform is not None):
             image = self.image_transform(image)
 
-        label_matrix = torch.zeros(
-            (self.S, self.S, self.C + len(boxes[0])), dtype=torch.float)
+        label_matrix = torch.zeros((self.S, self.S, 6), dtype=torch.float)
+
         for box in boxes:
             x, y, width, height, class_id = box
 
@@ -119,26 +122,21 @@ class CustomDataset(Dataset):
             cell = label_matrix[i, j]
 
             # One object per cell
-            if cell[self.C] == 0:
-                cell[self.C] = 1.0
+            if cell[0] == 0:
+                cell[0] = 1
 
-                cell[self.C + 1:] = torch.tensor(
-                    [
-                        self.S * x - j,
-                        self.S * y - i,
-                        width * self.S,
-                        height * self.S
-                    ]
+                x_cell, y_cell = self.S * x - j, self.S * y - i
+
+                width_cell, height_cell = (
+                    width * self.S,
+                    height * self.S,
                 )
 
-                if class_id > self.C or class_id == 0:
-                    error_message = f"There are more classes then predefined! \
-                                    Expected numbers from 1 to \
-                                    {self.C}, instead got {class_id}!"
-                    raise Exception(error_message)
+                cell[1:5] = torch.tensor(
+                    [x_cell, y_cell, width_cell, height_cell]
+                )
 
-                # Classes id start from 1 thats why we subtract 1 to start from 0
-                cell[class_id - 1] = 1.0
+                cell[5] = class_id - 1
 
         return image, label_matrix
 
@@ -152,22 +150,29 @@ class CustomDataset(Dataset):
 
     def __setup_boxes(self, idx):
 
+        xmin = self.annotations.iloc[idx, 1]
+        xmax = self.annotations.iloc[idx, 2]
+        ymin = self.annotations.iloc[idx, 3]
+        ymax = self.annotations.iloc[idx, 4]
+
+        # Convert to midpoint format and normalize
+
         x = [
-            ((xmin + xmax) / 2 / image_original_width) + 1e-10
-            for xmin, xmax in zip(self.annotations.iloc[idx, 1], self.annotations.iloc[idx, 2])
+            ((xmin + xmax + 1e-10) / 2 / image_original_width)
+            for xmin, xmax in zip(xmin, xmax)
         ]
 
         y = [
-            ((ymin + ymax) / 2 / image_original_height) + 1e-10
-            for ymin, ymax in zip(self.annotations.iloc[idx, 3], self.annotations.iloc[idx, 4])
+            ((ymin + ymax + 1e-10) / 2 / image_original_height)
+            for ymin, ymax in zip(ymin, ymax)
         ]
         width = [
-            ((xmax - xmin) / image_original_width) + 1e-10
-            for xmin, xmax in zip(self.annotations.iloc[idx, 1], self.annotations.iloc[idx, 2])
+            ((xmax - xmin + 1e-10) / image_original_width)
+            for xmin, xmax in zip(xmin, xmax)
         ]
         height = [
-            ((ymax - ymin) / image_original_height) + 1e-10
-            for ymin, ymax in zip(self.annotations.iloc[idx, 3], self.annotations.iloc[idx, 4])
+            ((ymax - ymin + 1e-10) / image_original_height)
+            for ymin, ymax in zip(ymin, ymax)
         ]
 
         class_ids = self.annotations.iloc[idx, 5]

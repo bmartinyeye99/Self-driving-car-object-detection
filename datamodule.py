@@ -5,7 +5,7 @@ import albumentations as A
 
 
 class DataModule:
-    def __init__(self, stride, classes):
+    def __init__(self, cfg):
 
         self.input_transform = TF.Compose([
             NumpyToTensor(),
@@ -19,7 +19,7 @@ class DataModule:
         ], bbox_params=A.BboxParams(format='yolo', min_visibility=0.4))
 
         self.dataset_train, self.dataset_val, self.dataset_test, self.dataset_draw = create_dataset(
-            stride, classes, self.input_transform, self.augmentation_transform)
+            cfg, self.input_transform, self.augmentation_transform)
 
     def setup(self, cfg):
         self.dataloader_train = torch.utils.data.dataloader.DataLoader(

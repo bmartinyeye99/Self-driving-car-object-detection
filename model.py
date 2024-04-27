@@ -69,7 +69,6 @@ class Model(nn.Module):
             # 1 box per cell
             # S * S cells
             nn.Linear(num_hidden // 2, S * S * (C + 5)),
-            nn.Sigmoid()
         )
 
     def forward(self, x):
