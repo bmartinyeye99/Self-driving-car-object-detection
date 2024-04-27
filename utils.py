@@ -6,32 +6,65 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 
-def plot_image(image_tensor, boxes_tensor):
-    image_np = image_tensor.permute(1, 2, 0).numpy()
+def iou_wh(boxes1, boxes2):
+    intersection = torch.min(boxes1[..., 0], boxes2[..., 0]) * torch.min(
+        boxes1[..., 1], boxes2[..., 1]
+    )
+    union = (
+        boxes1[..., 0] * boxes1[..., 1] +
+        boxes2[..., 0] * boxes2[..., 1] - intersection
+    )
+    return intersection / union
 
-    img_height, img_width = image_tensor.shape[1], image_tensor.shape[2]
 
-    _fig, ax = plt.subplots(1)
-    ax.imshow(image_np)
+def intersection_over_union(boxes_pred, boxes_labels):
 
-    for box in boxes_tensor:
-        # Format class_id, x_min, y_min, x_max, y_max
-        x_min = box[-4] * img_width
-        y_min = box[-3] * img_height
-        x_max = box[-2] * img_width
-        y_max = box[-1] * img_height
+    box1_x1 = boxes_pred[..., 0:1] - boxes_pred[..., 2:3] / 2
+    box1_y1 = boxes_pred[..., 1:2] - boxes_pred[..., 3:4] / 2
+    box1_x2 = boxes_pred[..., 0:1] + boxes_pred[..., 2:3] / 2
+    box1_y2 = boxes_pred[..., 1:2] + boxes_pred[..., 3:4] / 2
 
-        width = x_max - x_min
-        height = y_max - y_min
+    box2_x1 = boxes_labels[..., 0:1] - boxes_labels[..., 2:3] / 2
+    box2_y1 = boxes_labels[..., 1:2] - boxes_labels[..., 3:4] / 2
+    box2_x2 = boxes_labels[..., 0:1] + boxes_labels[..., 2:3] / 2
+    box2_y2 = boxes_labels[..., 1:2] + boxes_labels[..., 3:4] / 2
 
-        # Create a Rectangle patch
-        rect = patches.Rectangle(
-            (x_min, y_min), width, height, linewidth=1, edgecolor='r', facecolor='none')
+    x1 = torch.max(box1_x1, box2_x1)
+    y1 = torch.max(box1_y1, box2_y1)
+    x2 = torch.min(box1_x2, box2_x2)
+    y2 = torch.min(box1_y2, box2_y2)
 
-        # Add the rectangle to the plot
-        ax.add_patch(rect)
+    intersection = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
+    box1_area = abs((box1_x2 - box1_x1) * (box1_y2 - box1_y1))
+    box2_area = abs((box2_x2 - box2_x1) * (box2_y2 - box2_y1))
 
-    plt.show()
+    return intersection / (box1_area + box2_area - intersection + 1e-6)
+
+
+def plot_image(image_list, boxes_list):
+    for image_tensor, boxes_tensor in zip(image_list, boxes_list):
+        image_np = image_tensor.permute(1, 2, 0).numpy()
+
+        img_height, img_width = image_tensor.shape[1], image_tensor.shape[2]
+
+        _fig, ax = plt.subplots(1)
+        ax.imshow(image_np)
+
+        for box in boxes_tensor:
+            upper_left_x = box[0] - box[2] / 2
+            upper_left_y = box[1] - box[3] / 2
+
+            rect = patches.Rectangle(
+                (upper_left_x * img_width, upper_left_y * img_height),
+                box[2] * img_width,
+                box[3] * img_height,
+                linewidth=1,
+                edgecolor="r",
+                facecolor="none",
+            )
+            ax.add_patch(rect)
+
+        plt.show()
 
 
 class Statistics:
