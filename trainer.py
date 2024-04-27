@@ -66,8 +66,8 @@ class Trainer:
         self.draw(self.model, self.datamodule.dataloader_draw)
 
     def train_epoch(self, model, dataloader, run, epoch):
-        model.train()                    # Set model to train mode
-        stats = Statistics(self.device)  # Statistic class
+        model.train()  # Set model to train mode
+        stats = Statistics(self.device, self.cfg)  # Statistic class
         description = "Training"
 
         with tqdm(dataloader, desc=description) as progress:
@@ -83,7 +83,7 @@ class Trainer:
 
                     loss = self.loss_fn(model_prediction, y)
 
-                stats.step(y, model_prediction, loss)
+                stats.step(model_prediction, y, loss)
 
                 # Backwards pass
                 self.scaler.scale(loss).backward()
@@ -104,7 +104,7 @@ class Trainer:
 
     def validate_epoch(self, model, dataloader, run, epoch):
         model.eval()            # Set model to evaluation mode
-        stats = Statistics(self.device)
+        stats = Statistics(self.device, self.cfg, True)
         description = "Validation"
 
         with torch.no_grad():   # No need to compute gradients
@@ -119,7 +119,7 @@ class Trainer:
 
                         loss = self.loss_fn(model_prediction, y)
 
-                    stats.step(y, model_prediction, loss)
+                    stats.step(model_prediction, y, loss)
 
                     progress.set_postfix(avg_loss=stats.get_average_loss())
 
@@ -131,7 +131,7 @@ class Trainer:
 
     def test(self, model, dataloader):
         model.eval()
-        stats = Statistics(self.device)
+        stats = Statistics(self.device, self.cfg, True)
         description = "Testing"
 
         with torch.no_grad():
@@ -145,7 +145,7 @@ class Trainer:
 
                         loss = self.loss_fn(model_prediction, y)
 
-                    stats.step(y, model_prediction, loss)
+                    stats.step(model_prediction, y, loss)
 
                 progress.set_postfix(avg_loss=stats.get_average_loss())
 
