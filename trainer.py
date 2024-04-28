@@ -5,7 +5,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.cuda.amp import GradScaler, autocast
 import wandb
 
-from utils import Statistics
+from utils import Statistics, cell_boxes_to_boxes, non_max_suppression, plot_image, transform_to_prediction_format
 
 
 class Trainer:
@@ -163,3 +163,25 @@ class Trainer:
 
                 with autocast():
                     model_prediction = model(x)
+
+                bboxes = cell_boxes_to_boxes(model_prediction, self.cfg)
+
+                true_boxes = transform_to_prediction_format(y, self.cfg.C)
+                true_boxes = cell_boxes_to_boxes(true_boxes, self.cfg)
+
+                batch_size = model_prediction.shape[0]
+
+                for idx in range(batch_size):
+                    nms_boxes = non_max_suppression(
+                        bboxes[idx],
+                        0.3,
+                        0.2
+                    )
+
+                    true_nms_boxes = non_max_suppression(
+                        true_boxes[idx],
+                        0.5,
+                        0.4
+                    )
+
+                    plot_image(x[idx], nms_boxes, true_nms_boxes)

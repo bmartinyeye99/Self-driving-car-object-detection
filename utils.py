@@ -43,30 +43,50 @@ def intersection_over_union(boxes_pred, boxes_labels):
     return intersection / (box1_area + box2_area - intersection + 1e-10)
 
 
-def plot_image(image_list, boxes_list):
-    for image_tensor, boxes_tensor in zip(image_list, boxes_list):
-        image_np = image_tensor.permute(1, 2, 0).numpy()
+def plot_image(image_tensor, boxes_tensor, true_boxes):
+    image_tensor = image_tensor.cpu()
+    # boxes_tensor = boxes_tensor.cpu()
 
-        img_height, img_width = image_tensor.shape[1], image_tensor.shape[2]
+    image_np = image_tensor.permute(1, 2, 0).numpy()
 
-        _fig, ax = plt.subplots(1)
-        ax.imshow(image_np)
+    img_height, img_width = image_tensor.shape[1], image_tensor.shape[2]
 
-        for box in boxes_tensor:
-            upper_left_x = box[0] - box[2] / 2
-            upper_left_y = box[1] - box[3] / 2
+    _fig, ax = plt.subplots(1)
+    ax.imshow(image_np)
 
-            rect = patches.Rectangle(
-                (upper_left_x * img_width, upper_left_y * img_height),
-                box[2] * img_width,
-                box[3] * img_height,
-                linewidth=1,
-                edgecolor="r",
-                facecolor="none",
-            )
-            ax.add_patch(rect)
+    for box in boxes_tensor:
+        box = box[2:]
 
-        plt.show()
+        upper_left_x = box[0] - box[2] / 2
+        upper_left_y = box[1] - box[3] / 2
+
+        rect = patches.Rectangle(
+            (upper_left_x * img_width, upper_left_y * img_height),
+            box[2] * img_width,
+            box[3] * img_height,
+            linewidth=1,
+            edgecolor="r",
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+    for box in true_boxes:
+        box = box[2:]
+
+        upper_left_x = box[0] - box[2] / 2
+        upper_left_y = box[1] - box[3] / 2
+
+        rect = patches.Rectangle(
+            (upper_left_x * img_width, upper_left_y * img_height),
+            box[2] * img_width,
+            box[3] * img_height,
+            linewidth=1,
+            edgecolor="green",
+            facecolor="none",
+        )
+        ax.add_patch(rect)
+
+    plt.show()
 
 
 class Statistics:
@@ -76,6 +96,7 @@ class Statistics:
         self.all_pred_boxes = []
         self.all_true_boxes = []
 
+        self.cfg = cfg
         self.C = cfg.C
         self.S = cfg.S
         self.iou_threshold = cfg.iou_threshold
@@ -106,9 +127,10 @@ class Statistics:
         )).view(-1), (ground_truth[..., -4:] * presence.unsqueeze(-1).float()).view(-1))
 
     def add_boxes(self, ground_truth, prediction):
-        true_bboxes = self.cell_boxes_to_boxes(
-            self.transform_to_prediction_format(ground_truth))
-        bboxes = self.cell_boxes_to_boxes(prediction)
+        ground_truth = transform_to_prediction_format(ground_truth, self.C)
+
+        true_bboxes = cell_boxes_to_boxes(ground_truth, self.cfg)
+        bboxes = cell_boxes_to_boxes(prediction, self.cfg)
 
         batch_size = prediction.shape[0]
 
@@ -127,21 +149,6 @@ class Statistics:
                     self.all_true_boxes.append([self.idx] + box)
 
             self.idx += 1
-
-    def transform_to_prediction_format(self, ground_truth):
-        new_g = ground_truth.clone()
-
-        # Only on present obj
-        presence = ground_truth[..., 0] == 1
-        class_ids = ground_truth[..., -1].long()
-
-        one_hot = functional.one_hot(class_ids, num_classes=self.C) * \
-            presence.unsqueeze(-1).float()
-
-        # Append the one hot encoding of classes at the start
-        # of elements in the last dim
-
-        return torch.cat((one_hot.float(), new_g[..., :-1]), dim=-1)
 
     def get_average_loss(self):
         total_loss = sum(self.losses) / len(self.losses)
@@ -166,21 +173,38 @@ class Statistics:
 
         return metrics
 
-    def cell_boxes_to_boxes(self, out):
-        converted_pred = convert_cell_boxes(out, self.S, self.C).reshape(
-            out.shape[0], self.S * self.S, -1)
-        converted_pred[..., 0] = converted_pred[..., 0].long()
-        all_bboxes = []
 
-        for ex_idx in range(out.shape[0]):
-            bboxes = []
+def transform_to_prediction_format(ground_truth, C):
+    new_g = ground_truth.clone()
 
-            for bbox_idx in range(self.S * self.S):
-                bboxes.append([x.item()
-                              for x in converted_pred[ex_idx, bbox_idx, :]])
-            all_bboxes.append(bboxes)
+    # Only on present obj
+    presence = ground_truth[..., 0] == 1
+    class_ids = ground_truth[..., -1].long()
 
-        return all_bboxes
+    one_hot = functional.one_hot(class_ids, num_classes=C) * \
+        presence.unsqueeze(-1).float()
+
+    # Append the one hot encoding of classes at the start
+    # of elements in the last dim
+
+    return torch.cat((one_hot.float(), new_g[..., :-1]), dim=-1)
+
+
+def cell_boxes_to_boxes(out, cfg):
+    converted_pred = convert_cell_boxes(out, cfg.S, cfg.C).reshape(
+        out.shape[0], cfg.S * cfg.S, -1)
+    converted_pred[..., 0] = converted_pred[..., 0].long()
+    all_bboxes = []
+
+    for ex_idx in range(out.shape[0]):
+        bboxes = []
+
+        for bbox_idx in range(cfg.S * cfg.S):
+            bboxes.append([x.item()
+                           for x in converted_pred[ex_idx, bbox_idx, :]])
+        all_bboxes.append(bboxes)
+
+    return all_bboxes
 
 
 def convert_cell_boxes(predictions, S, C):
