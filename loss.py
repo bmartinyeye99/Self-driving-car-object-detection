@@ -55,9 +55,9 @@ class SIoULoss(nn.Module):
         shape_cost = torch.pow(1 - torch.exp(-1 * omiga_w), 4) + \
             torch.pow(1 - torch.exp(-1 * omiga_h), 4)
 
-        loss = iou - 0.5 * (distance_cost + shape_cost)
+        loss = (iou - 0.5 * (distance_cost + shape_cost)) + self.eps
 
-        return loss.mean()
+        return torch.abs(loss.mean())
 
 
 class YoloLoss(nn.Module):
