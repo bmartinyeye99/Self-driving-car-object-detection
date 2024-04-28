@@ -3,7 +3,7 @@ import torch.nn as nn
 from utils import intersection_over_union
 
 
-class SIoU(nn.Module):
+class SIoULoss(nn.Module):
     def __init__(self, eps=1e-10):
         super().__init__()
 
@@ -61,7 +61,7 @@ class SIoU(nn.Module):
 
 
 class YoloLoss(nn.Module):
-    def __init__(self, C, box_loss=nn.HuberLoss()):
+    def __init__(self, C, box_loss):
         super().__init__()
 
         self.box_loss = box_loss
