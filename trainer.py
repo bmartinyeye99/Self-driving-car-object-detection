@@ -16,7 +16,7 @@ class Trainer:
 
         # Create the optimizer
         self.optimizer = torch.optim.NAdam(
-            model.parameters(), lr=self.cfg.learning_rate)
+            model.parameters(), lr=self.cfg.learning_rate, weight_decay=self.cfg.weight_decay)
 
         self.loss_fn = cfg.loss_fn
 
