@@ -33,35 +33,19 @@ class SPPF(nn.Module):
         return self.c_out(out)
 
 
-class ResidualBlock(nn.Module):
-    def __init__(self, channels, num_repeats=1):
-        super().__init__()
+class CBL(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super(CBL, self).__init__()
 
-        res_layers = []
-        for _ in range(num_repeats):
-            res_layers += [
-                nn.Sequential(
-                    nn.Conv2d(channels, channels // 2, kernel_size=1),
-                    nn.BatchNorm2d(channels // 2),
-                    nn.LeakyReLU(0.1),
-                    nn.Conv2d(channels // 2, channels,
-                              kernel_size=3, padding=1),
-                    nn.BatchNorm2d(channels),
-                    nn.LeakyReLU(0.1)
-                )
-            ]
-        self.layers = nn.ModuleList(res_layers)
-        self.num_repeats = num_repeats
+        self.layers = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size,
+                      stride, padding, bias=False),
+            nn.BatchNorm2d(out_channels, eps=1e-3, momentum=0.03),
+            nn.SiLU(inplace=True)
+        )
 
     def forward(self, x):
-        for layer in self.layers:
-            residual = x
-
-            x = layer(x)
-
-            x = x + residual
-
-        return x
+        return self.layers(x)
 
 
 class CustomBlock(nn.Module):
@@ -73,7 +57,15 @@ class CustomBlock(nn.Module):
         self.conv_double = nn.Conv2d(
             chin, chout, kernel_size=3, padding='same')
 
-        self.residual = ResidualBlock(chin)
+        self.conv_extraction = nn.Sequential(
+            nn.Conv2d(chin, chin // 2, kernel_size=1),
+            nn.BatchNorm2d(chin // 2),
+            nn.LeakyReLU(0.1),
+
+            nn.Conv2d(chin // 2, chin, kernel_size=3, padding=1),
+            nn.BatchNorm2d(chin),
+            nn.LeakyReLU(0.1)
+        )
 
         self.bn = nn.BatchNorm2d(chin)
         self.leaky_relu = nn.LeakyReLU(negative_slope=negative_slope)
@@ -81,10 +73,10 @@ class CustomBlock(nn.Module):
 
     def forward(self, x):
         out = self.conv_same(x)
-        out = self.residual(out)
+        out = self.conv_extraction(out)
 
         out = self.conv_same(out)
-        out = self.residual(out)
+        out = self.conv_extraction(out)
 
         out = self.conv_same(out)
 
@@ -94,6 +86,30 @@ class CustomBlock(nn.Module):
 
         out = self.conv_double(out)
         return out
+
+
+class C3(nn.Module):
+    def __init__(self, in_channels, out_channels, width_multiple=1):
+        super(C3, self).__init__()
+        c_ = int(width_multiple*in_channels)
+
+        self.c1 = CBL(in_channels, c_, kernel_size=1, stride=1, padding=0)
+        self.c_skipped = CBL(
+            in_channels,  c_, kernel_size=1, stride=1, padding=0)
+
+        self.seq = nn.Sequential(
+            CBL(c_, c_, 1, 1, 0),
+            CBL(c_, c_, 3, 1, 1),
+
+            CBL(c_, c_, 1, 1, 0),
+            CBL(c_, c_, 3, 1, 1),
+        )
+        self.c_out = CBL(c_ * 2, out_channels,
+                         kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x):
+        x = torch.cat([self.seq(self.c1(x)), self.c_skipped(x)], dim=1)
+        return self.c_out(x)
 
 
 class Model(nn.Module):
@@ -119,11 +135,18 @@ class Model(nn.Module):
             CustomBlock(channels*4, channels*8, negative_slope),
             CustomBlock(channels*8, channels*16, negative_slope),
             CustomBlock(channels*16, channels*32, negative_slope),
-            CustomBlock(channels*32, channels*64, negative_slope),
-            SPPF(channels*64, channels*64),
+            SPPF(channels*32, channels*32),
+
+            CBL(channels*32, channels*16, kernel_size=1, stride=1, padding=0),
+            C3(channels*16, channels*8, width_multiple=0.25),
+            CBL(channels*8, channels*4, kernel_size=1, stride=1, padding=0),
+            C3(channels*4, channels*4, width_multiple=0.5),
+
+            CustomBlock(channels*4, channels*8, negative_slope),
+            CustomBlock(channels*8, channels*16, negative_slope),
         ])
 
-        self.num_features = channels * 64
+        self.num_features = channels * 16
 
         self.adaptive = nn.AdaptiveAvgPool2d((1, 1))
 
@@ -143,6 +166,8 @@ class Model(nn.Module):
             nn.Linear(num_hidden // 2, S * S * (C + 5)),
         )
 
+        self.sigmoid = nn.Sigmoid()
+
     def forward(self, x):
         for layer in self.layers:
             x = layer(x)
@@ -150,4 +175,8 @@ class Model(nn.Module):
         x = self.adaptive(x)
         f = x.reshape(x.size(0), -1)  # Flatten the feature map
 
-        return self.regression(f).view(x.size(0), self.S, self.S, self.C + 5)
+        out = self.regression(f).view(x.size(0), self.S, self.S, self.C + 5)
+
+        out[..., 1:3] = self.sigmoid(out[..., 1:3])  # For x and y coordinates
+
+        return out
