@@ -54,6 +54,7 @@ class Trainer:
             with wandb.init(
                 project=self.cfg.project_name,
                 config=self.cfg,
+                name=self.cfg.run_name,
             ) as run:
                 self.training_loop(run)
         else:
@@ -70,6 +71,8 @@ class Trainer:
         stats = Statistics(self.device, self.cfg)  # Statistic class
         description = "Training"
 
+        t = 0
+
         with tqdm(dataloader, desc=description) as progress:
             for x, y in progress:
                 x = x.to(self.device, memory_format=torch.channels_last)
@@ -82,6 +85,23 @@ class Trainer:
                     model_prediction = self.model(x)
 
                     loss = self.loss_fn(model_prediction, y)
+
+                if t % 500 == 0 and not t == 0:
+                    true_boxes = transform_to_prediction_format(y, self.cfg.C)
+                    true_boxes = cell_boxes_to_boxes(true_boxes, self.cfg)
+                    bboxes = cell_boxes_to_boxes(model_prediction, self.cfg)
+                    batch_size = x.shape[0]
+                    for idx in range(batch_size):
+
+                        nms_boxes = non_max_suppression(
+                            bboxes[idx],
+                            iou_threshold=self.cfg.iou_threshold,
+                            threshold=self.cfg.threshold
+                        )
+
+                        plot_image(x[idx], true_boxes[idx], nms_boxes)
+                        break
+                t += 1
 
                 stats.step(model_prediction, y, loss)
 
@@ -164,24 +184,19 @@ class Trainer:
                 with autocast():
                     model_prediction = model(x)
 
-                bboxes = cell_boxes_to_boxes(model_prediction, self.cfg)
-
                 true_boxes = transform_to_prediction_format(y, self.cfg.C)
                 true_boxes = cell_boxes_to_boxes(true_boxes, self.cfg)
 
-                batch_size = model_prediction.shape[0]
+                pred_bboxes = cell_boxes_to_boxes(model_prediction, self.cfg)
 
+                batch_size = x.shape[0]
                 for idx in range(batch_size):
-                    nms_boxes = non_max_suppression(
-                        bboxes[idx],
-                        0.3,
-                        0.2
+
+                    pred_nms_boxes = non_max_suppression(
+                        pred_bboxes[idx],
+                        iou_threshold=self.cfg.iou_threshold,
+                        threshold=self.cfg.threshold
                     )
 
-                    true_nms_boxes = non_max_suppression(
-                        true_boxes[idx],
-                        0.5,
-                        0.4
-                    )
-
-                    plot_image(x[idx], nms_boxes, true_nms_boxes)
+                    plot_image(x[idx], true_boxes[idx], pred_nms_boxes)
+                    break

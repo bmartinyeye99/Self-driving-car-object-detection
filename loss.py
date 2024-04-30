@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from utils import intersection_over_union
 
 
 class SIoULoss(nn.Module):
@@ -66,10 +65,8 @@ class YoloLoss(nn.Module):
 
         self.box_loss = box_loss
         self.no_object_loss = nn.BCEWithLogitsLoss()
-        self.object_loss = nn.MSELoss()
+        self.object_loss = nn.BCEWithLogitsLoss()
         self.class_loss = nn.CrossEntropyLoss()
-
-        self.sigmoid = nn.Sigmoid()
 
         self.C = C
 
@@ -89,21 +86,14 @@ class YoloLoss(nn.Module):
         obj = target[..., 0] == 1
         no_obj = target[..., 0] == 0
 
-        # # No object loss
+        # No object loss
         no_object_loss = self.no_object_loss(
-            (obj_pred[no_obj]), (obj_target[no_obj]),
-        )
+            obj_pred[no_obj], obj_target[no_obj])
 
-        # # Object loss
-        box_pred = predictions[..., -4:]
+        # Object loss
+        object_loss = self.object_loss(obj_pred[obj], obj_target[obj])
 
-        iou = intersection_over_union(
-            box_pred[obj], target[..., 1:5][obj]).detach()
-
-        object_loss = self.object_loss(self.sigmoid(
-            obj_pred[obj]), (iou * obj_target[obj]))
-
-        # # Box coordinates
+        # Box coordinates
         box_loss = self.box_loss(
             predictions[..., -4:][obj], target[..., 1:5][obj])
 

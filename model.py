@@ -41,7 +41,7 @@ class CBL(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size,
                       stride, padding, bias=False),
             nn.BatchNorm2d(out_channels, eps=1e-3, momentum=0.03),
-            nn.SiLU(inplace=True)
+            nn.SiLU()
         )
 
     def forward(self, x):
@@ -113,20 +113,17 @@ class C3(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(
-        self,
-        chin,
-        channels,
-        num_hidden,
-        S,
-        C,
-        dropout_rate=0.1,
-        negative_slope=0.01
-    ):
+    def __init__(self, cfg):
         super().__init__()
 
-        self.S = S
-        self.C = C
+        self.S = cfg.S
+        self.C = cfg.C
+
+        chin = cfg.chin
+        channels = cfg.channels
+        num_hidden = cfg.num_hidden
+        dropout_rate = cfg.dropout_rate
+        negative_slope = cfg.negative_slope
 
         self.layers = nn.ModuleList([
             CustomBlock(chin, channels, negative_slope),
@@ -163,10 +160,11 @@ class Model(nn.Module):
             # 4 coordinates for each bounding box
             # 1 box per cell
             # S * S cells
-            nn.Linear(num_hidden // 2, S * S * (C + 5)),
+            nn.Linear(num_hidden // 2, self.S * self.S * (self.C + 5)),
         )
 
         self.sigmoid = nn.Sigmoid()
+        self.relu = nn.ReLU()
 
     def forward(self, x):
         for layer in self.layers:
@@ -175,8 +173,7 @@ class Model(nn.Module):
         x = self.adaptive(x)
         f = x.reshape(x.size(0), -1)  # Flatten the feature map
 
-        out = self.regression(f).view(x.size(0), self.S, self.S, self.C + 5)
-
-        out[..., 1:3] = self.sigmoid(out[..., 1:3])  # For x and y coordinates
+        out = self.regression(f)
+        out = out.view(x.size(0), self.S, self.S, self.C + 5)
 
         return out

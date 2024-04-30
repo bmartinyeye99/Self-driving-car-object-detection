@@ -2,7 +2,6 @@ from typing import Counter
 import torch
 from torch.nn import functional
 from torchmetrics import R2Score
-from torchvision.ops import box_iou
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -213,9 +212,8 @@ def convert_cell_boxes(predictions, S, C):
     predictions = predictions.reshape(batch_size, S, S, C + 5)
 
     bboxes = predictions[..., -4:]
-    scores = torch.cat(
-        (predictions[..., C].unsqueeze(0), predictions[..., C].unsqueeze(0)), dim=0
-    )
+    scores = predictions[..., C]
+
     best_box = scores.argmax(0).unsqueeze(-1)
     best_boxes = bboxes * (1 - best_box)
 
@@ -226,12 +224,12 @@ def convert_cell_boxes(predictions, S, C):
     w_y = 1 / S * best_boxes[..., 2:4]
 
     converted_bboxes = torch.cat((x, y, w_y), dim=-1)
+
+    confidence = predictions[..., C].unsqueeze(-1)
     predicted_class = predictions[..., :C].argmax(-1).unsqueeze(-1)
-    best_confidence = torch.max(predictions[..., C], predictions[..., C]).unsqueeze(
-        -1
-    )
+
     converted_preds = torch.cat(
-        (predicted_class, best_confidence, converted_bboxes), dim=-1
+        (predicted_class, confidence, converted_bboxes), dim=-1
     )
 
     return converted_preds
