@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 
+# Implementation taken from https://github.com/xialuxi/yolov5-car-plate/blob/master/utils/general.py#L370-L388
 class SIoULoss(nn.Module):
     def __init__(self, eps=1e-10):
         super().__init__()

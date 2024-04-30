@@ -49,25 +49,26 @@ class CBL(nn.Module):
 
 
 class CustomBlock(nn.Module):
-    def __init__(self, chin, chout, negative_slope=0.01):
+    def __init__(self, in_channels, out_channels, negative_slope=0.01):
         super().__init__()
 
-        self.conv_same = nn.Conv2d(chin, chin, kernel_size=3, padding='same')
+        self.conv_same = nn.Conv2d(
+            in_channels, in_channels, kernel_size=3, padding='same')
 
         self.conv_double = nn.Conv2d(
-            chin, chout, kernel_size=3, padding='same')
+            in_channels, out_channels, kernel_size=3, padding='same')
 
         self.conv_extraction = nn.Sequential(
-            nn.Conv2d(chin, chin // 2, kernel_size=1),
-            nn.BatchNorm2d(chin // 2),
+            nn.Conv2d(in_channels, in_channels // 2, kernel_size=1),
+            nn.BatchNorm2d(in_channels // 2),
             nn.LeakyReLU(0.1),
 
-            nn.Conv2d(chin // 2, chin, kernel_size=3, padding=1),
-            nn.BatchNorm2d(chin),
+            nn.Conv2d(in_channels // 2, in_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(in_channels),
             nn.LeakyReLU(0.1)
         )
 
-        self.bn = nn.BatchNorm2d(chin)
+        self.bn = nn.BatchNorm2d(in_channels)
         self.leaky_relu = nn.LeakyReLU(negative_slope=negative_slope)
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
@@ -162,9 +163,6 @@ class Model(nn.Module):
             # S * S cells
             nn.Linear(num_hidden // 2, self.S * self.S * (self.C + 5)),
         )
-
-        self.sigmoid = nn.Sigmoid()
-        self.relu = nn.ReLU()
 
     def forward(self, x):
         for layer in self.layers:

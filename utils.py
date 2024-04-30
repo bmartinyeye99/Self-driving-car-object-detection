@@ -62,8 +62,6 @@ class Statistics:
         self.cfg = cfg
         self.C = cfg.C
         self.S = cfg.S
-        self.iou_threshold = cfg.iou_threshold
-        self.threshold = cfg.threshold
         self.calculate_map = calculate_map
 
         self.r2_score = R2Score().to(device)
